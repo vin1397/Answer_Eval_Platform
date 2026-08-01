@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  @apply bg-surface text-ink dark:bg-dark-surface dark:text-dark-ink;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  scroll-behavior: smooth;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c9c2e8; border-radius: 999px; }
+.dark ::-webkit-scrollbar-thumb { background: #3a3660; }
+
+@layer components {
+  .neo-card {
+    @apply bg-surface dark:bg-dark-card rounded-neo shadow-neo-flat dark:shadow-neo-dark transition-all duration-300;
+  }
+  .neo-inset {
+    @apply bg-surface dark:bg-dark-card rounded-neo shadow-neo-inset dark:shadow-neo-dark-inset;
+  }
+  .neo-btn {
+    @apply rounded-neo px-5 py-2.5 font-semibold shadow-neo-flat dark:shadow-neo-dark active:shadow-neo-pressed transition-all duration-200 hover:-translate-y-0.5;
+  }
+  .neo-input {
+    @apply w-full rounded-2xl bg-surface dark:bg-dark-card px-4 py-3 shadow-neo-inset dark:shadow-neo-dark-inset outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-ink/40 dark:placeholder:text-dark-ink/40 transition;
+  }
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-ink/70 dark:text-dark-ink/70 hover:bg-white/60 dark:hover:bg-white/5 transition-all duration-200;
+  }
+  .sidebar-link.active {
+    @apply bg-primary text-white shadow-neo-flat;
+  }
+}
