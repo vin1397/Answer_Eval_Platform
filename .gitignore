@@ -1,43 +1,70 @@
-# =========================
-# Python
-# =========================
+# ============================================================
+# Answer Eval Platform
+# Git Ignore
+# ============================================================
+
+
+# ============================================================
+# PYTHON
+# ============================================================
+
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual Environments
+*.pyd
+
+# Python virtual environments
 venv/
 .venv/
 env/
 ENV/
+
 backend/venv/
 backend/.venv/
 
-# Python build files
+training/venv/
+training/.venv/
+
+# Python build/package files
 build/
 dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
 
-# Pytest
+# Packaging metadata
+MANIFEST
+*.manifest
+
+# ============================================================
+# TESTING / COVERAGE
+# ============================================================
+
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
+.tox/
+.nox/
+coverage.xml
+coverage.json
 
-# MyPy
+# ============================================================
+# TYPE CHECKING / LINTING
+# ============================================================
+
 .mypy_cache/
-
-# Ruff
-.ruff_cache/
-
-# Pyright
 .pyright/
+.ruff_cache/
+.dmypy.json
+dmypy.json
 
-# =========================
-# Environment Variables
-# =========================
+
+# ============================================================
+# ENVIRONMENT VARIABLES / SECRETS
+# ============================================================
+
 .env
 .env.*
 !.env.example
@@ -46,92 +73,334 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 
-# =========================
-# SQLite Database
-# =========================
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ============================================================
+# DATABASES
+# ============================================================
+
 *.db
 *.sqlite
 *.sqlite3
+
 local_dev.db
 
-# =========================
-# Logs
-# =========================
+# PostgreSQL local data
+postgres_data/
+docker-data/
+
+# ============================================================
+# LOGS
+# ============================================================
+
 logs/
 *.log
-
-# =========================
-# IDE
-# =========================
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# =========================
-# OS Files
-# =========================
-.DS_Store
-Thumbs.db
-
-# =========================
-# Node / Vite
-# =========================
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/.cache/
-
-node_modules/
-dist/
-.vite/
-
-# npm / pnpm / yarn
+*.log.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# =========================
-# Uploads / Generated Files
-# =========================
-storage/uploads/
-storage/temp/
-*.tmp
+# ============================================================
+# TEMPORARY FILES
+# ============================================================
 
-# =========================
-# AI Models / Large Files
-# =========================
-*.pth
-*.pt
-*.ckpt
-*.onnx
-*.bin
-*.safetensors
-
-# PaddleOCR Models
-models/
-backend/models/
-
-# =========================
-# Docker
-# =========================
-docker-data/
-postgres_data/
-redis_data/
-
-# =========================
-# Secrets
-# =========================
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
-
-# =========================
-# Misc
-# =========================
 .cache/
+.cache/**
 temp/
 tmp/
+*.tmp
+*.temp
+
+*.bak
+*.backup
+*.old
+
+# ============================================================
+# IDE / EDITORS
+# ============================================================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+*.swn
+
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# NODE / VITE
+# ============================================================
+
+node_modules/
+frontend/node_modules/
+
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+.vite/
+dist/
+
+# ============================================================
+# PACKAGE MANAGERS
+# ============================================================
+
+.npm/
+.pnpm-store/
+.yarn/
+.yarn-cache/
+
+# ============================================================
+# UPLOADS / USER-GENERATED FILES
+# ============================================================
+
+storage/uploads/
+storage/temp/
+storage/processed/
+
+# Don't commit arbitrary uploaded PDFs/images
+storage/uploads/**
+storage/temp/**
+storage/processed/**
+
+# ============================================================
+# EXAM DATA / GENERATED PROCESSING DATA
+# ============================================================
+
+# Generated OCR output
+datasets/handwriting/scan_results/
+datasets/handwriting/benchmark_results/
+datasets/handwriting/dataset_preview/
+
+# Generated processed handwriting images
+datasets/handwriting/*_processed/
+datasets/handwriting/processed/
+
+# Generated OCR crops
+datasets/processed/
+
+# ============================================================
+# LARGE DATASETS
+# ============================================================
+
+# Parquet datasets can become very large
+*.parquet
+
+# Large dataset archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Dataset caches
+datasets/**/.cache/
+datasets/**/cache/
+
+
+# ============================================================
+# AI / MACHINE LEARNING MODELS
+# ============================================================
+
+# Large model weights
+*.safetensors
+*.safetensors.index.json
+
+*.pth
+*.pt
+*.ptl
+*.ckpt
+*.bin
+*.onnx
+*.onnx_data
+
+# TensorFlow
+*.h5
+*.hdf5
+saved_model/
+
+# GGUF / GGML
+*.gguf
+*.ggml
+
+# CoreML
+*.mlmodel
+*.mlpackage
+
+# OpenVINO
+*.xml
+*.blob
+
+# ============================================================
+# MODEL DIRECTORIES
+# ============================================================
+
+# Ignore downloaded/generated model directories by default
+models/
+backend/models/
+training/models/
+
+# BUT KEEP MODEL DOCUMENTATION / CONFIGURATION
+!models/
+!models/**/
+
+!models/**/README*
+!models/**/LICENSE*
+!models/**/config.json
+!models/**/generation_config.json
+!models/**/preprocessor_config.json
+!models/**/tokenizer.json
+!models/**/tokenizer_config.json
+!models/**/special_tokens_map.json
+!models/**/vocab.json
+!models/**/merges.txt
+
+# Same policy for backend models
+!backend/models/
+!backend/models/**/
+
+!backend/models/**/README*
+!backend/models/**/LICENSE*
+!backend/models/**/config.json
+!backend/models/**/generation_config.json
+!backend/models/**/preprocessor_config.json
+!backend/models/**/tokenizer.json
+!backend/models/**/tokenizer_config.json
+!backend/models/**/special_tokens_map.json
+!backend/models/**/vocab.json
+!backend/models/**/merges.txt
+
+# Same policy for training models
+!training/models/
+!training/models/**/
+
+!training/models/**/README*
+!training/models/**/LICENSE*
+!training/models/**/config.json
+!training/models/**/generation_config.json
+!training/models/**/preprocessor_config.json
+!training/models/**/tokenizer.json
+!training/models/**/tokenizer_config.json
+!training/models/**/special_tokens_map.json
+!training/models/**/vocab.json
+!training/models/**/merges.txt
+
+
+# ============================================================
+# HUGGING FACE CACHE
+# ============================================================
+
+.cache/huggingface/
+huggingface/
+huggingface_cache/
+
+# Common Hugging Face cache locations
+.huggingface/
+models--*/
+snapshots/
+
+# ============================================================
+# TORCH / ML CACHE
+# ============================================================
+
+.torch/
+torch_cache/
+
+# ============================================================
+# PADDLEOCR CACHE / MODELS
+# ============================================================
+
+.paddlex/
+paddleocr/
+paddle_models/
+PaddleOCR/
+
+# ============================================================
+# TRANSFORMERS / TOKENIZER CACHE
+# ============================================================
+
+transformers_cache/
+transformers/
+
+# ============================================================
+# JUPYTER
+# ============================================================
+
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ============================================================
+# GENERATED REPORTS
+# ============================================================
+
+reports/generated/
+reports/output/
+
+*.generated.pdf
+*.generated.csv
+*.generated.xlsx
+
+# ============================================================
+# GENERATED OCR / DEBUG IMAGES
+# ============================================================
+
+debug/
+debug_output/
+ocr_debug/
+
+*.debug.png
+*.debug.jpg
+
+# ============================================================
+# FRONTEND GENERATED FILES
+# ============================================================
+
+frontend/coverage/
+frontend/.eslintcache
+
+# ============================================================
+# LOCK / TEMP EDITOR FILES
+# ============================================================
+
+*.orig
+*.rej
+
+# ============================================================
+# OS / FILE MANAGER
+# ============================================================
+
+.Trashes
+.Spotlight-V100
+.fseventsd
+Desktop.ini
+
+# ============================================================
+# LOCAL CONFIGURATION
+# ============================================================
+
+*.local
+*.local.json
+
+# Keep example configuration files
+!.env.example
+!*.example
+
+
+# Dataset files
+dataset/*.parquet
+
+# OCR benchmark output
+datasets/handwriting/benchmark_results/*.csv
+
+# Model weights
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
