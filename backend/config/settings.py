@@ -46,11 +46,16 @@ class Settings(BaseSettings):
 
     # --- AI / ML ---
     OCR_LANGUAGE: str = "en"
+    OCR_ENGINE: str = "trocr"  # "trocr" (local handwriting, default) | "paddleocr" (printed/general fallback)
+    TROCR_MODEL_DIR: str = "../models/handwriting/trocr-base-handwritten"
+    TROCR_DEVICE: str = "auto"  # "auto" | "cpu" | "cuda"
+    SCAN_DPI: int = 300
     SENTENCE_TRANSFORMER_MODEL: str = "all-MiniLM-L6-v2"
     ML_MODEL_DIR: str = "./ml_models"
     SIMILARITY_WEIGHT: float = 0.6
     KEYWORD_WEIGHT: float = 0.4
     AUTO_APPROVE_CONFIDENCE_THRESHOLD: float = 0.85
+    LOW_CONFIDENCE_LINE_THRESHOLD: float = 0.35  # below this, a line's text is still kept but flagged low-confidence
 
     # --- Rate limiting ---
     RATE_LIMIT_PER_MINUTE: int = 120

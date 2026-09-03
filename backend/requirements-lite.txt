@@ -22,7 +22,10 @@ python-docx==1.1.2
 Pillow==10.4.0
 slowapi==0.1.9
 
+# Testing
+pytest==8.3.3
+
 # NOT included here (install with `python run_local.py --full-ai` instead):
-#   paddleocr, paddlepaddle, sentence-transformers, opencv-python-headless, torch, celery, redis
+#   paddleocr, paddlepaddle, sentence-transformers, transformers, pymupdf, opencv-python-headless, torch, celery, redis
 # The app runs fully without them — only the OCR/NLP steps of "Run AI Evaluation"
 # need them. Everything else (auth, CRUD, dashboard, reports) works as-is.

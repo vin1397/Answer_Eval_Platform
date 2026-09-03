@@ -3,9 +3,9 @@ Pydantic schemas for the examination / evaluation pipeline.
 """
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from models.enums import DifficultyLevel, BloomTaxonomy, EvaluationStatus, ReviewDecision
+from models.enums import DifficultyLevel, BloomTaxonomy, EvaluationStatus, ReviewDecision, QuestionType
 
 
 class QuestionBase(BaseModel):
@@ -14,6 +14,16 @@ class QuestionBase(BaseModel):
     max_marks: float = 10.0
     difficulty: DifficultyLevel = DifficultyLevel.MEDIUM
     bloom_level: BloomTaxonomy = BloomTaxonomy.UNDERSTAND
+    question_type: QuestionType = QuestionType.SHORT_ANSWER
+    options: list[str] | None = None  # required (>=2) when question_type == "mcq"
+
+    @field_validator("options")
+    @classmethod
+    def _validate_options(cls, v, info):
+        question_type = info.data.get("question_type")
+        if question_type == QuestionType.MCQ and (not v or len(v) < 2):
+            raise ValueError("MCQ questions require at least 2 options")
+        return v
 
 
 class QuestionCreate(QuestionBase):
@@ -40,16 +50,23 @@ class QuestionPaperOut(BaseModel):
 
 class ModelAnswerCreate(BaseModel):
     question_id: int
-    answer_text: str
+    answer_text: str | None = None  # descriptive reference answer (short-answer questions)
+    correct_option: str | None = None  # e.g. "B" (MCQ questions)
     keywords: list[str] = Field(default_factory=list)
     expected_concepts: list[str] = Field(default_factory=list)
     rubric: list[dict] = Field(default_factory=list)
+
+    @field_validator("correct_option")
+    @classmethod
+    def _uppercase_option(cls, v):
+        return v.strip().upper() if v else v
 
 
 class ModelAnswerOut(BaseModel):
     id: int
     question_id: int
-    answer_text: str
+    answer_text: str | None
+    correct_option: str | None
     keywords: list[str]
     expected_concepts: list[str]
     rubric: list[dict]
@@ -88,17 +105,22 @@ class ExtractedAnswer(BaseModel):
     keyword_score: float
     ai_marks: float
     max_marks: float
+    uncertain: bool = False
+    question_type: str = "short_answer"
 
 
 class EvaluationOut(BaseModel):
     id: int
     answer_script_id: int
     status: EvaluationStatus
+    status_detail: str | None = None
     ocr_raw_text: str | None = None
     extracted_answers: list[dict] | None = None
+    has_uncertain_segments: bool = False
     total_ai_marks: float | None = None
     total_max_marks: float | None = None
     total_teacher_marks: float | None = None
+    final_marks: float | None = None
     confidence_score: float | None = None
     ai_model_version: str | None = None
     created_at: datetime

@@ -37,7 +37,7 @@ def exam_report_pdf(examination_id: int, db: Session = Depends(get_db), _: User 
         Spacer(1, 12),
     ]
 
-    data = [["USN", "Student", "AI Marks", "Teacher Marks", "Status", "Confidence"]]
+    data = [["USN", "Student", "AI Marks", "Teacher Marks", "Final Marks", "Status", "Confidence"]]
     for script in scripts:
         student = db.get(Student, script.student_id)
         evaluation = script.evaluation
@@ -47,6 +47,7 @@ def exam_report_pdf(examination_id: int, db: Session = Depends(get_db), _: User 
                 student.name if student else "-",
                 evaluation.total_ai_marks if evaluation else "-",
                 evaluation.total_teacher_marks if evaluation else "-",
+                evaluation.final_marks if evaluation else "-",
                 evaluation.status.value if evaluation else "not evaluated",
                 evaluation.confidence_score if evaluation else "-",
             ]
@@ -91,6 +92,7 @@ def exam_report_excel(examination_id: int, db: Session = Depends(get_db), _: Use
                 "Student": student.name if student else "-",
                 "AI Marks": evaluation.total_ai_marks if evaluation else None,
                 "Teacher Marks": evaluation.total_teacher_marks if evaluation else None,
+                "Final Marks": evaluation.final_marks if evaluation else None,
                 "Status": evaluation.status.value if evaluation else "not evaluated",
                 "Confidence": evaluation.confidence_score if evaluation else None,
             }
@@ -123,7 +125,7 @@ def student_report_pdf(student_id: int, db: Session = Depends(get_db), _: User =
         Spacer(1, 12),
     ]
 
-    data = [["Examination", "AI Marks", "Teacher Marks", "Status"]]
+    data = [["Examination", "AI Marks", "Teacher Marks", "Final Marks", "Status"]]
     for script in scripts:
         exam = db.get(Examination, script.examination_id)
         evaluation = script.evaluation
@@ -132,6 +134,7 @@ def student_report_pdf(student_id: int, db: Session = Depends(get_db), _: User =
                 exam.name if exam else "-",
                 evaluation.total_ai_marks if evaluation else "-",
                 evaluation.total_teacher_marks if evaluation else "-",
+                evaluation.final_marks if evaluation else "-",
                 evaluation.status.value if evaluation else "not evaluated",
             ]
         )

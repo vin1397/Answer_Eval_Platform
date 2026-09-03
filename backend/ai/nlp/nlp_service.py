@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 import numpy as np
@@ -29,6 +29,9 @@ _STOPWORDS = {
     "into", "than", "then", "also", "such", "these", "those", "when",
 }
 
+# Accepts "B", "b", "(B)", "B.", "B)", "Option B", "b)" etc.
+_MCQ_OPTION_RE = re.compile(r"(?:option\s*)?\(?\b([a-dA-D])\b\)?[.)]?", re.IGNORECASE)
+
 
 @dataclass
 class QuestionScore:
@@ -40,6 +43,7 @@ class QuestionScore:
     max_marks: float
     matched_keywords: list[str]
     missing_keywords: list[str]
+    extra: dict = field(default_factory=dict)  # engine-specific metadata (e.g. MCQ is_correct)
 
 
 @lru_cache(maxsize=1)
@@ -138,4 +142,64 @@ def score_question(
         max_marks=max_marks,
         matched_keywords=matched,
         missing_keywords=missing,
+    )
+
+
+# --------------------------------------------------------------------------
+# MCQ scoring — deliberately does NOT use semantic similarity. A single
+# selected option is either correct or it isn't; running an embedding model
+# on "D" vs "B" would be meaningless and slower for no benefit.
+# --------------------------------------------------------------------------
+def normalize_mcq_option(raw_answer: str) -> str | None:
+    """
+    Extracts a single A/B/C/D option letter from OCR'd or typed text,
+    tolerant of common forms: "B", "b", "(B)", "B.", "B)", "Option B".
+    Returns None if no option letter can be confidently identified
+    (caller should treat this as unanswered, not guess).
+    """
+    if not raw_answer:
+        return None
+    text = raw_answer.strip()
+
+    # A genuine bare option selection is always short ("B", "(B)", "Option B"...).
+    # A long descriptive sentence must never be matched here, even if it
+    # happens to start with a standalone word like "A" (as in "A supervised
+    # learning model...") — length is the primary safety gate, checked
+    # before any pattern matching is attempted.
+    if len(text) > 12:
+        return None
+
+    match = _MCQ_OPTION_RE.match(text) or _MCQ_OPTION_RE.search(text)
+    if not match:
+        return None
+    return match.group(1).upper()
+
+
+def score_mcq(question_number: str, student_answer: str, correct_option: str, max_marks: float) -> QuestionScore:
+    """
+    Scores a multiple-choice question: full marks if the normalized student
+    selection matches the normalized correct option, otherwise zero.
+    """
+    student_option = normalize_mcq_option(student_answer)
+    correct_normalized = normalize_mcq_option(correct_option) or (correct_option or "").strip().upper() or None
+
+    is_correct = student_option is not None and correct_normalized is not None and student_option == correct_normalized
+    ai_marks = max_marks if is_correct else 0.0
+
+    return QuestionScore(
+        question_number=question_number,
+        semantic_score=1.0 if is_correct else 0.0,
+        keyword_score=1.0 if is_correct else 0.0,
+        combined_score=1.0 if is_correct else 0.0,
+        ai_marks=ai_marks,
+        max_marks=max_marks,
+        matched_keywords=[],
+        missing_keywords=[],
+        extra={
+            "question_type": "mcq",
+            "student_option": student_option,
+            "correct_option": correct_normalized,
+            "is_correct": is_correct,
+            "option_detected": student_option is not None,
+        },
     )

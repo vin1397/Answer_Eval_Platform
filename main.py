@@ -92,6 +92,10 @@ def ensure_env_file():
         'CORS_ORIGINS=["http://localhost:5173"]\n'
         "STORAGE_BACKEND=local\n"
         "LOCAL_STORAGE_PATH=./storage\n"
+        "OCR_ENGINE=trocr\n"
+        "TROCR_MODEL_DIR=../models/handwriting/trocr-base-handwritten\n"
+        "TROCR_DEVICE=auto\n"
+        "SCAN_DPI=300\n"
         "SENTENCE_TRANSFORMER_MODEL=all-MiniLM-L6-v2\n"
         "ML_MODEL_DIR=./ml_models\n"
     )
@@ -107,6 +111,17 @@ def seed_admin():
     )
     if result.returncode != 0:
         print("Seeding failed — see traceback above. Continuing anyway; you can re-run this script.")
+
+
+def run_migration():
+    print("→ Applying any pending schema additions (safe no-op if already up to date)...")
+    result = subprocess.run(
+        [str(VENV_PYTHON), "-m", "scripts.migrate_add_trocr_columns"],
+        cwd=BACKEND_DIR,
+        env=os.environ.copy(),
+    )
+    if result.returncode != 0:
+        print("Migration step failed — see traceback above. Continuing anyway.")
 
 
 def start_backend():
@@ -148,6 +163,7 @@ def main():
     install_backend_deps()
     ensure_env_file()
     seed_admin()
+    run_migration()
     ensure_frontend_deps()
 
     backend_proc = start_backend()

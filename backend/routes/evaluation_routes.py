@@ -18,7 +18,6 @@ from models.academic import Student
 from models.user import User
 from services.storage_service import storage_service
 from services.evaluation_pipeline import run_pipeline
-from services.celery_tasks import evaluate_answer_script_task, evaluate_batch_task
 
 router = APIRouter(tags=["Evaluation"])
 
@@ -138,7 +137,19 @@ def run_evaluation_sync(
 def queue_evaluation(
     answer_script_id: int, _: User = Depends(require_roles(UserRole.ADMIN, UserRole.TEACHER))
 ):
-    """Enqueues the evaluation as a background Celery task (recommended for production)."""
+    """Enqueues the evaluation as a background Celery task (recommended for production).
+    Requires Celery/Redis to be installed and running — not needed for the
+    synchronous /evaluations/run/{id} endpoint above."""
+    try:
+        from services.celery_tasks import evaluate_answer_script_task
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Background evaluation requires Celery/Redis, which aren't installed in this "
+            "environment. Use POST /evaluations/run/{answer_script_id} instead, or install the "
+            "full requirements (`pip install celery redis`) and run a Celery worker.",
+        ) from exc
+
     task = evaluate_answer_script_task.delay(answer_script_id)
     return {"task_id": task.id, "answer_script_id": answer_script_id, "status": "queued"}
 
@@ -147,6 +158,15 @@ def queue_evaluation(
 def queue_batch_evaluation(
     answer_script_ids: list[int], _: User = Depends(require_roles(UserRole.ADMIN, UserRole.TEACHER))
 ):
+    try:
+        from services.celery_tasks import evaluate_batch_task
+    except ModuleNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Background evaluation requires Celery/Redis, which aren't installed in this "
+            "environment. Use POST /evaluations/run/{answer_script_id} per script instead.",
+        ) from exc
+
     task = evaluate_batch_task.delay(answer_script_ids)
     return {"task_id": task.id, "count": len(answer_script_ids), "status": "queued"}
 

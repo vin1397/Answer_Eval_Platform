@@ -1,16 +1,26 @@
 import { useEffect, useState } from "react";
-import { ClipboardCheck, Save } from "lucide-react";
+import { ClipboardCheck, Save, CheckCircle2 } from "lucide-react";
 import api from "../services/api";
 import NeoCard from "../components/ui/NeoCard";
 import Button from "../components/ui/Button";
 import PageHeader from "../components/ui/PageHeader";
 import type { QuestionPaper } from "../types";
 
+interface FormState {
+  answer_text: string;
+  keywords: string;
+  expected_concepts: string;
+  correct_option: string;
+}
+
+const emptyFormState: FormState = { answer_text: "", keywords: "", expected_concepts: "", correct_option: "" };
+
 export default function ModelAnswers() {
   const [papers, setPapers] = useState<QuestionPaper[]>([]);
   const [selectedPaper, setSelectedPaper] = useState<number | "">("");
-  const [forms, setForms] = useState<Record<number, { answer_text: string; keywords: string; expected_concepts: string }>>({});
+  const [forms, setForms] = useState<Record<number, FormState>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [savedId, setSavedId] = useState<number | null>(null);
 
   useEffect(() => {
     api.get("/question-papers").then((res) => setPapers(res.data));
@@ -18,27 +28,32 @@ export default function ModelAnswers() {
 
   const activePaper = papers.find((p) => p.id === selectedPaper);
 
-  function updateForm(questionId: number, field: string, value: string) {
+  function updateForm(questionId: number, field: keyof FormState, value: string) {
     setForms((prev) => ({
       ...prev,
-      [questionId]: { ...prev[questionId], [field]: value } as any,
+      [questionId]: { ...emptyFormState, ...prev[questionId], [field]: value },
     }));
   }
 
-  async function saveModelAnswer(questionId: number) {
-    const form = forms[questionId];
-    if (!form?.answer_text) return;
+  async function saveModelAnswer(questionId: number, isMcq: boolean) {
+    const form = forms[questionId] || emptyFormState;
+    if (isMcq && !form.correct_option) return;
+    if (!isMcq && !form.answer_text) return;
+
     setSavingId(questionId);
     try {
       await api.post("/model-answers", {
         question_id: questionId,
-        answer_text: form.answer_text,
+        answer_text: isMcq ? null : form.answer_text,
+        correct_option: isMcq ? form.correct_option : null,
         keywords: form.keywords ? form.keywords.split(",").map((k) => k.trim()).filter(Boolean) : [],
         expected_concepts: form.expected_concepts
           ? form.expected_concepts.split(",").map((k) => k.trim()).filter(Boolean)
           : [],
         rubric: [],
       });
+      setSavedId(questionId);
+      setTimeout(() => setSavedId((id) => (id === questionId ? null : id)), 2000);
     } finally {
       setSavingId(null);
     }
@@ -46,7 +61,7 @@ export default function ModelAnswers() {
 
   return (
     <div>
-      <PageHeader title="Model Answers" subtitle="Author faculty reference answers, keywords, and expected concepts per question" />
+      <PageHeader title="Model Answers" subtitle="Author the faculty reference answer key — MCQ correct options or descriptive reference answers, per question" />
 
       <div className="mb-6 max-w-sm">
         <select className="neo-input" value={selectedPaper} onChange={(e) => setSelectedPaper(Number(e.target.value) || "")}>
@@ -57,29 +72,72 @@ export default function ModelAnswers() {
 
       {activePaper ? (
         <div className="space-y-5">
-          {activePaper.questions.map((q) => (
-            <NeoCard key={q.id}>
-              <div className="mb-3 flex items-center justify-between">
-                <p className="font-bold">Q{q.question_number}. {q.question_text}</p>
-                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">{q.max_marks} marks</span>
-              </div>
-              <textarea
-                className="neo-input min-h-24 resize-y"
-                placeholder="Model answer text..."
-                value={forms[q.id]?.answer_text || ""}
-                onChange={(e) => updateForm(q.id, "answer_text", e.target.value)}
-              />
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <input className="neo-input" placeholder="Keywords (comma separated)"
-                  value={forms[q.id]?.keywords || ""} onChange={(e) => updateForm(q.id, "keywords", e.target.value)} />
-                <input className="neo-input" placeholder="Expected concepts (comma separated)"
-                  value={forms[q.id]?.expected_concepts || ""} onChange={(e) => updateForm(q.id, "expected_concepts", e.target.value)} />
-              </div>
-              <Button className="mt-4" icon={<Save size={15} />} onClick={() => saveModelAnswer(q.id)} disabled={savingId === q.id}>
-                {savingId === q.id ? "Saving..." : "Save Model Answer"}
-              </Button>
-            </NeoCard>
-          ))}
+          {activePaper.questions.map((q) => {
+            const isMcq = q.question_type === "mcq";
+            return (
+              <NeoCard key={q.id}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="font-bold">Q{q.question_number}. {q.question_text}</p>
+                  <div className="flex shrink-0 gap-2">
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">{q.max_marks} marks</span>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isMcq ? "bg-accent/10 text-accent" : "bg-ink/10 text-ink/60"}`}>
+                      {isMcq ? "MCQ" : "Short Answer"}
+                    </span>
+                  </div>
+                </div>
+
+                {isMcq ? (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-ink/60">Select the correct option</p>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {(q.options || []).map((opt, idx) => {
+                        const letter = String.fromCharCode(65 + idx); // A, B, C, D...
+                        const selected = forms[q.id]?.correct_option === letter;
+                        return (
+                          <button
+                            key={letter}
+                            onClick={() => updateForm(q.id, "correct_option", letter)}
+                            className={`neo-inset rounded-2xl px-3 py-2 text-left text-xs transition ${
+                              selected ? "ring-2 ring-primary bg-primary/10" : ""
+                            }`}
+                          >
+                            <span className="font-bold">{letter}.</span> {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(!q.options || q.options.length === 0) && (
+                      <p className="text-xs text-ink/40">No options were extracted for this question — re-upload the question paper, or edit it to add options.</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      className="neo-input min-h-24 resize-y"
+                      placeholder="Model answer text..."
+                      value={forms[q.id]?.answer_text || ""}
+                      onChange={(e) => updateForm(q.id, "answer_text", e.target.value)}
+                    />
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <input className="neo-input" placeholder="Keywords (comma separated)"
+                        value={forms[q.id]?.keywords || ""} onChange={(e) => updateForm(q.id, "keywords", e.target.value)} />
+                      <input className="neo-input" placeholder="Expected concepts (comma separated)"
+                        value={forms[q.id]?.expected_concepts || ""} onChange={(e) => updateForm(q.id, "expected_concepts", e.target.value)} />
+                    </div>
+                  </>
+                )}
+
+                <Button
+                  className="mt-4"
+                  icon={savedId === q.id ? <CheckCircle2 size={15} /> : <Save size={15} />}
+                  onClick={() => saveModelAnswer(q.id, isMcq)}
+                  disabled={savingId === q.id}
+                >
+                  {savingId === q.id ? "Saving..." : savedId === q.id ? "Saved" : "Save Model Answer"}
+                </Button>
+              </NeoCard>
+            );
+          })}
         </div>
       ) : (
         <NeoCard className="py-12 text-center text-ink/40">

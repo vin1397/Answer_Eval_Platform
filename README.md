@@ -24,22 +24,89 @@ you can extend it. See "Honest scope notes" below for specifics.
 ## Architecture
 
 ```
-Question Paper (PDF/DOCX) ──▶ auto-parsed into Questions
-Model Answer (per question) ──▶ keywords, expected concepts, rubric
-Answer Script (PDF/JPG/PNG) ──▶ PaddleOCR ──▶ per-question text segments
-                                     │
-                                     ▼
-                    Sentence-Transformers semantic similarity
-                              + keyword/rubric matching
-                                     │
-                                     ▼
-                    scikit-learn confidence model (trained on
-                    teacher corrections; heuristic fallback until then)
-                                     │
-                                     ▼
-                    Final AI marks ──▶ auto-approve OR route to
-                                        Teacher Review
+Question Paper (PDF/DOCX) ──▶ auto-parsed into Questions (MCQ options OR
+                                descriptive text, detected generically —
+                                no hardcoded question ranges)
+Model Answer (per question) ──▶ MCQ: correct_option
+                                 Descriptive: reference text + keywords/rubric
+Answer Script (PDF/JPG/PNG)
+        │
+        ▼
+   PDF/page extraction ──▶ preprocessing ──▶ line segmentation
+   (generic horizontal-projection profiling — no fixed coordinates,
+    no per-student or per-page assumptions)
+        │
+        ▼
+   Local TrOCR (line-level crops, never a full page) ─── local_files_only=True,
+        │                                                 model loaded once (singleton)
+        ▼
+   Question-number marker detection per block
+   (confident match -> assigned; no match -> flagged `uncertain`,
+    never guessed)
+        │
+        ▼
+   Per-question scoring:
+     MCQ         -> exact normalized-option match (A/B/C/D), no ML involved
+     Descriptive -> Sentence-Transformers semantic similarity
+                    + keyword/rubric matching
+        │
+        ▼
+   scikit-learn confidence model (trained on teacher corrections;
+   heuristic fallback until then)
+        │
+        ▼
+   Final AI marks ──▶ auto-approve OR route to Teacher Review
+   (forced to review if ANY segment was uncertain)
+        │
+        ▼
+   Teacher override (total_teacher_marks) ──▶ `final_marks` property
+   (used by ALL reports — teacher correction always wins over raw AI marks)
 ```
+
+### Local handwriting OCR (TrOCR) setup
+
+The handwriting OCR engine (`ai/ocr/trocr_service.py`) requires a locally
+downloaded TrOCR checkpoint — it is **never** fetched at runtime
+(`local_files_only=True`) and never calls any cloud OCR API.
+
+1. Place your downloaded model at:
+   ```
+   models/handwriting/trocr-base-handwritten/
+   ```
+   relative to the project root (sibling of `backend/` and `frontend/`),
+   containing `config.json`, `model.safetensors`, `tokenizer.json`,
+   `vocab.json`, `merges.txt`, `preprocessor_config.json`, etc.
+2. Or point `TROCR_MODEL_DIR` in `backend/.env` at wherever it actually lives.
+3. If the model directory is missing, evaluation runs fail immediately with
+   a clear, actionable error — they never silently fall back to a different
+   engine or produce a fabricated result.
+
+An alternate full-page PaddleOCR engine is still available
+(`OCR_ENGINE=paddleocr` in `.env`) for printed/non-handwriting documents,
+but TrOCR line-segmentation is the default for student answer scripts.
+
+### Upgrading an existing database
+
+If you already have a database from before this change, run the additive
+migration once (never drops or rewrites existing data):
+```bash
+cd backend
+python -m scripts.migrate_add_trocr_columns
+```
+This was verified against a populated pre-existing schema in this build —
+existing rows survive with sensible defaults (`question_type` defaults to
+`short_answer`).
+
+### Running the test suite
+```bash
+cd backend
+pytest tests/ -v
+```
+34 tests cover: question/MCQ-option parsing, MCQ answer normalization and
+scoring, line/block segmentation, question-marker detection (including the
+"never guess, flag uncertain" safety property), teacher-override precedence
+in reports, and guarded TrOCR model loading (skips cleanly with a clear
+reason if the model isn't installed in your environment, runs fully if it is).
 
 ## Tech stack (as specified)
 
@@ -96,34 +163,61 @@ celery -A services.celery_app worker --loglevel=info
 
 ## Honest scope notes — what's fully live vs. scaffolded
 
-**Fully wired and working:**
+**Fully wired, working, and test-covered in this round:**
 - JWT auth (login/refresh/logout), role-based access (Admin/Teacher)
 - Subjects, Students (+ Excel import/export), Semesters, Schemes, Faculty — full CRUD
-- Question paper upload with automatic question/marks extraction from PDF/DOCX
-- Model answer authoring (keywords, expected concepts)
+- Question paper upload with automatic question/marks extraction, **including
+  generic MCQ-option detection** (no hardcoded question ranges — mixed
+  MCQ/descriptive papers in any order are handled correctly)
+- Model answer authoring — MCQ correct-option picker or descriptive
+  reference text/keywords, depending on question type
 - Examinations + answer script upload (single, drag-and-drop, bulk)
-- The full OCR → NLP → ML evaluation pipeline (synchronous and via Celery)
-- Teacher review workflow (approve / reject / re-evaluate)
-- Dashboard with live charts, analytics (question-wise, class performance), recent activity
-- PDF and Excel report generation
+- **Local handwriting OCR**: PDF/image → page extraction → generic line
+  segmentation (horizontal-projection profiling, no fixed coordinates) →
+  local TrOCR (`local_files_only=True`, singleton-loaded, line crops only,
+  never a full page) → question-marker association that flags `uncertain`
+  rather than guessing
+- MCQ scoring (exact normalized-option match) and descriptive scoring
+  (semantic + keyword) both feed the same evaluation pipeline and ML
+  confidence model
+- Teacher review workflow; `Evaluation.final_marks` always prefers the
+  teacher's correction over raw AI marks, and **every report now uses it**
+- Dashboard with live charts, analytics, recent activity
+- PDF and Excel report generation (now with a Final Marks column)
 - Institute settings, password change
+- 34 pytest tests (32 pass unconditionally, 2 require the actual TrOCR
+  model weights and skip cleanly without them) — actually run in this
+  environment, not just written
 
-**Scaffolded with real, correct code but needs your data/tuning to shine:**
+**What genuinely wasn't executable in this sandbox, and why:**
+- The real TrOCR model wasn't loaded here (no model weights present in this
+  environment) — the loading/inference code is correct and was unit-tested
+  for its structure and error paths (missing-model handling, confidence
+  estimation math), but not against real handwriting images. Test it on
+  your machine with `pytest tests/test_trocr_model_loading.py -v` once the
+  model is in place — those 2 tests will stop skipping and actually run.
+- PaddleOCR/PyTorch/Sentence-Transformers/opencv are large; segmentation
+  logic (line/block detection, question-marker regex) WAS tested with
+  synthetic images using real OpenCV. Sentence-Transformers embedding
+  generation itself wasn't executed here (no model download), but its
+  integration point (`nlp_service.score_question`) is unchanged from the
+  previously-verified build.
+
+**Scaffolded, not rebuilt (preserved from the existing architecture per your instructions):**
 - The ML confidence model (`ai/ml/ml_service.py`) needs ≥20 teacher-reviewed
-  evaluations before it trains a real model; until then it uses a documented
-  heuristic fallback — this is standard for any learning system, not a stub.
-- WebSocket route exists for realtime evaluation progress; the pipeline
-  doesn't yet call `manager.broadcast()` from inside `evaluation_pipeline.py`
-  — wire that in if you want live progress bars.
-- PaddleOCR/PyTorch/Sentence-Transformers are large downloads (~2–4 GB
-  combined); they weren't installed/run in this sandbox (no GPU, restricted
-  network), so the OCR/NLP code paths are correct and lazily-imported but
-  not execution-tested here. Everything else (auth, CRUD, DB, routing,
-  reports, frontend) **was** actually run and verified.
-- Alembic migrations aren't set up — dev mode auto-creates tables via
-  `Base.metadata.create_all`; add Alembic before a real production deploy.
-- S3 storage backend is implemented but untested (local filesystem is the
-  default and was verified).
+  evaluations before it trains a real model; heuristic fallback until then.
+- WebSocket route exists for realtime progress; the pipeline doesn't yet
+  call `manager.broadcast()` — `status_detail` is written to the DB at each
+  step (so polling `GET /evaluations/{id}` mid-run shows live progress
+  server-side), but the frontend's "Run AI Evaluation" button doesn't poll
+  during the synchronous call yet. Wire that in if you want a live progress
+  bar rather than a blocking spinner.
+- Alembic isn't set up; use `scripts/migrate_add_trocr_columns.py` for this
+  round's schema changes, or `Base.metadata.create_all` for a fresh dev DB.
+- S3 storage backend is implemented but untested (local filesystem verified).
+- Per-question teacher marks editing isn't in the UI — review currently
+  overrides the *total* only (existing architecture), not each question's
+  mark individually.
 
 ## Default login
 

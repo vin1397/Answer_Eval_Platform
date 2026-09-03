@@ -89,8 +89,16 @@ export interface ExtractedAnswer {
   ai_marks: number;
   max_marks: number;
   confidence?: number;
+  uncertain?: boolean;
+  question_type?: "mcq" | "short_answer";
   matched_keywords?: string[];
   missing_keywords?: string[];
+  mcq?: {
+    student_option: string | null;
+    correct_option: string | null;
+    is_correct: boolean;
+    option_detected: boolean;
+  };
   note?: string;
 }
 
@@ -98,11 +106,14 @@ export interface Evaluation {
   id: number;
   answer_script_id: number;
   status: EvaluationStatus;
+  status_detail?: string | null;
   ocr_raw_text?: string | null;
   extracted_answers?: ExtractedAnswer[] | null;
+  has_uncertain_segments?: boolean;
   total_ai_marks?: number | null;
   total_max_marks?: number | null;
   total_teacher_marks?: number | null;
+  final_marks?: number | null;
   confidence_score?: number | null;
   ai_model_version?: string | null;
   created_at: string;
@@ -127,6 +138,8 @@ export interface Question {
   max_marks: number;
   difficulty: "easy" | "medium" | "hard";
   bloom_level: string;
+  question_type: "mcq" | "short_answer";
+  options?: string[] | null;
 }
 
 export interface Examination {

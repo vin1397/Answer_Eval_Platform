@@ -24,6 +24,11 @@ class BloomTaxonomy(str, enum.Enum):
     CREATE = "create"
 
 
+class QuestionType(str, enum.Enum):
+    MCQ = "mcq"
+    SHORT_ANSWER = "short_answer"
+
+
 class EvaluationStatus(str, enum.Enum):
     PENDING = "pending"
     OCR_IN_PROGRESS = "ocr_in_progress"

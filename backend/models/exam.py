@@ -10,7 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.session import Base
-from models.enums import DifficultyLevel, BloomTaxonomy, EvaluationStatus, ReviewDecision
+from models.enums import DifficultyLevel, BloomTaxonomy, EvaluationStatus, ReviewDecision, QuestionType
 
 
 class QuestionPaper(Base):
@@ -44,6 +44,10 @@ class Question(Base):
     bloom_level: Mapped[BloomTaxonomy] = mapped_column(
         SAEnum(BloomTaxonomy), default=BloomTaxonomy.UNDERSTAND
     )
+    question_type: Mapped[QuestionType] = mapped_column(
+        SAEnum(QuestionType), default=QuestionType.SHORT_ANSWER, nullable=False
+    )
+    options: Mapped[list | None] = mapped_column(JSON, nullable=True)  # MCQ choices, e.g. ["Cats", "Dogs", ...]
 
     question_paper_id: Mapped[int] = mapped_column(ForeignKey("question_papers.id", ondelete="CASCADE"))
 
@@ -60,7 +64,8 @@ class ModelAnswer(Base):
     question_id: Mapped[int] = mapped_column(
         ForeignKey("questions.id", ondelete="CASCADE"), unique=True
     )
-    answer_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # descriptive reference answer
+    correct_option: Mapped[str | None] = mapped_column(String(8), nullable=True)  # MCQ correct choice, e.g. "B"
     keywords: Mapped[list] = mapped_column(JSON, default=list)  # ["mitosis", "cell division", ...]
     expected_concepts: Mapped[list] = mapped_column(JSON, default=list)
     rubric: Mapped[list] = mapped_column(JSON, default=list)  # [{"criterion": "...", "marks": 2}, ...]
@@ -125,11 +130,18 @@ class Evaluation(Base):
     status: Mapped[EvaluationStatus] = mapped_column(
         SAEnum(EvaluationStatus), default=EvaluationStatus.PENDING
     )
+    status_detail: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Human-readable current step, e.g. "Running handwriting OCR" — updated live
+    # during the pipeline so the UI can show granular progress beyond the enum.
 
     ocr_raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_answers: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # [{"question_number": "1a", "answer_text": "...", "semantic_score": 0.82,
-    #   "keyword_score": 0.7, "ai_marks": 7.5, "max_marks": 10}]
+    #   "keyword_score": 0.7, "ai_marks": 7.5, "max_marks": 10, "uncertain": false}]
+
+    has_uncertain_segments: Mapped[bool] = mapped_column(default=False)
+    # True if any answer segment's question-number association could not be
+    # confidently determined — forces teacher review rather than guessing.
 
     total_ai_marks: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_max_marks: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -148,6 +160,13 @@ class Evaluation(Base):
     review = relationship(
         "TeacherReview", back_populates="evaluation", uselist=False, cascade="all, delete-orphan"
     )
+
+    @property
+    def final_marks(self) -> float | None:
+        """Teacher-approved marks take precedence; falls back to the AI marks
+        until a teacher has reviewed. Reports must always use this, never
+        `total_ai_marks` directly, once a review exists."""
+        return self.total_teacher_marks if self.total_teacher_marks is not None else self.total_ai_marks
 
 
 class TeacherReview(Base):

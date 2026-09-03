@@ -97,6 +97,21 @@ def delete_question(
 
 
 # ------------------------------------------------------------- Model answers
+def _validate_model_answer_for_question(question: Question, payload: ModelAnswerCreate) -> None:
+    from models.enums import QuestionType
+
+    if question.question_type == QuestionType.MCQ:
+        if not payload.correct_option:
+            raise HTTPException(
+                status_code=400, detail="MCQ questions require correct_option (e.g. 'B')"
+            )
+    else:
+        if not payload.answer_text or not payload.answer_text.strip():
+            raise HTTPException(
+                status_code=400, detail="Short-answer questions require a reference answer_text"
+            )
+
+
 @router.post("/model-answers", response_model=ModelAnswerOut, status_code=201)
 def create_model_answer(
     payload: ModelAnswerCreate, db: Session = Depends(get_db),
@@ -107,6 +122,7 @@ def create_model_answer(
         raise HTTPException(status_code=404, detail="Question not found")
     if question.model_answer is not None:
         raise HTTPException(status_code=400, detail="Model answer already exists for this question")
+    _validate_model_answer_for_question(question, payload)
 
     model_answer = ModelAnswer(**payload.model_dump())
     db.add(model_answer)
@@ -123,6 +139,7 @@ def update_model_answer(
     model_answer = db.get(ModelAnswer, model_answer_id)
     if not model_answer:
         raise HTTPException(status_code=404, detail="Model answer not found")
+    _validate_model_answer_for_question(model_answer.question, payload)
     for field, value in payload.model_dump(exclude={"question_id"}).items():
         setattr(model_answer, field, value)
     db.commit()
