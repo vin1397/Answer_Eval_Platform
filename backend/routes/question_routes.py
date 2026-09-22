@@ -4,6 +4,7 @@ Question paper upload/parsing and model-answer authoring endpoints.
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from api.schemas_exam import (
@@ -21,6 +22,25 @@ from services.document_parser import extract_questions_from_file
 router = APIRouter(tags=["Question Papers"])
 
 ALLOWED_QP_TYPES = {".pdf", ".docx"}
+
+QP_MEDIA_TYPES = {"pdf": "application/pdf", "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+
+
+@router.get("/question-papers/{paper_id}/file")
+def get_question_paper_file(
+    paper_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+):
+    """Serves the stored question-paper file (inline) for the in-app viewer."""
+    paper = db.get(QuestionPaper, paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Question paper not found")
+
+    path = Path(storage_service.resolve_local_path(paper.file_path))
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Stored file is missing on the server")
+
+    media_type = QP_MEDIA_TYPES.get(paper.file_type, "application/octet-stream")
+    return FileResponse(path, media_type=media_type, headers={"Content-Disposition": "inline"})
 
 
 @router.get("/question-papers", response_model=list[QuestionPaperOut])

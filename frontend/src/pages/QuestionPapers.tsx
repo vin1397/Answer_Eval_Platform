@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Upload, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { Upload, FileText, ChevronDown, ChevronUp, Eye } from "lucide-react";
 import api from "../services/api";
 import NeoCard from "../components/ui/NeoCard";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import PageHeader from "../components/ui/PageHeader";
+import ScriptViewer from "../components/ScriptViewer";
 import type { QuestionPaper, Subject } from "../types";
 
 export default function QuestionPapers() {
@@ -17,6 +18,7 @@ export default function QuestionPapers() {
   const [totalMarks, setTotalMarks] = useState(100);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [viewingPaper, setViewingPaper] = useState<QuestionPaper | null>(null);
 
   function refresh() {
     api.get("/question-papers").then((res) => setPapers(res.data));
@@ -76,7 +78,16 @@ export default function QuestionPapers() {
                   </p>
                 </div>
               </div>
-              {expanded === paper.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setViewingPaper(paper); }}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20"
+                  title="View the original document"
+                >
+                  <Eye size={13} /> View paper
+                </button>
+                {expanded === paper.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </div>
             </button>
             {expanded === paper.id && (
               <div className="border-t border-ink/5 dark:border-white/5 px-6 py-4">
@@ -114,6 +125,16 @@ export default function QuestionPapers() {
           </NeoCard>
         )}
       </div>
+
+      <ScriptViewer
+        open={viewingPaper != null}
+        onClose={() => setViewingPaper(null)}
+        fileId={viewingPaper?.id ?? null}
+        fileType={viewingPaper?.file_type ?? null}
+        fileUrl={viewingPaper ? `/question-papers/${viewingPaper.id}/file` : undefined}
+        title={viewingPaper?.title ?? "Question Paper"}
+        subtitle={viewingPaper ? `${viewingPaper.questions.length} questions • ${viewingPaper.total_marks} marks` : undefined}
+      />
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Upload Question Paper">
         <div className="space-y-4">

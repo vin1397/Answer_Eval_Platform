@@ -117,6 +117,21 @@ export interface Evaluation {
   confidence_score?: number | null;
   ai_model_version?: string | null;
   created_at: string;
+  student_name?: string | null;
+  student_usn?: string | null;
+  examination_name?: string | null;
+  answer_script_file_type?: string | null;
+  question_context?: Record<
+    string,
+    {
+      question_text: string;
+      max_marks: number;
+      question_type: string;
+      reference_answer?: string | null;
+      correct_option?: string | null;
+      keywords?: string[];
+    }
+  > | null;
 }
 
 export interface QuestionPaper {
@@ -160,6 +175,14 @@ export interface AnswerScript {
   examination_id: number;
   student_id: number;
   created_at: string;
+  // Enrichment from the list endpoint:
+  student_name?: string | null;
+  student_usn?: string | null;
+  examination_name?: string | null;
+  evaluation_status?: string;
+  final_marks?: number | null;
+  total_max_marks?: number | null;
+  evaluation_id?: number | null;
 }
 
 export interface DashboardSummary {

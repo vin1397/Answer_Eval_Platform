@@ -14,9 +14,11 @@ from api.schemas_academic import (
     SemesterCreate, SemesterOut, SchemeCreate, SchemeOut, FacultyCreate, FacultyOut,
     SubjectCreate, SubjectUpdate, SubjectOut, StudentCreate, StudentUpdate, StudentOut,
 )
+from api.schemas_results import StudentResultOut
 from auth.dependencies import get_current_user, require_admin
 from database.session import get_db
 from models.academic import Semester, Scheme, Faculty, Subject, Student
+from models.exam import Examination, AnswerScript, Evaluation
 from models.user import User
 
 router = APIRouter(tags=["Academic"])
@@ -213,6 +215,45 @@ def delete_student(student_id: int, db: Session = Depends(get_db), _: User = Dep
         raise HTTPException(status_code=404, detail="Student not found")
     db.delete(student)
     db.commit()
+
+
+@router.get("/students/{student_id}/results", response_model=list[StudentResultOut])
+def get_student_results(
+    student_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+):
+    """Per-examination result card for one student: script, evaluation status,
+    AI marks, final (teacher-approved) marks, and confidence. `final_marks`
+    follows the teacher-precedence rule implemented on the Evaluation model."""
+    student = db.get(Student, student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    scripts = (
+        db.query(AnswerScript)
+        .filter(AnswerScript.student_id == student_id)
+        .order_by(AnswerScript.created_at.desc())
+        .all()
+    )
+    results: list[dict] = []
+    for script in scripts:
+        exam = db.get(Examination, script.examination_id)
+        evaluation: Evaluation | None = script.evaluation
+        results.append(
+            {
+                "examination_id": exam.id if exam else None,
+                "examination_name": exam.name if exam else "Unknown examination",
+                "exam_date": exam.exam_date if exam else None,
+                "answer_script_id": script.id,
+                "evaluation_id": evaluation.id if evaluation else None,
+                "evaluation_status": evaluation.status.value if evaluation else "not_evaluated",
+                "ai_marks": evaluation.total_ai_marks if evaluation else None,
+                "max_marks": evaluation.total_max_marks if evaluation else None,
+                "final_marks": evaluation.final_marks if evaluation else None,
+                "confidence": evaluation.confidence_score if evaluation else None,
+                "evaluated_at": evaluation.updated_at if evaluation else None,
+            }
+        )
+    return results
 
 
 @router.post("/students/import-excel")

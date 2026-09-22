@@ -1053,6 +1053,41 @@ TrOCR model weights
 
 ---
 
+# 🐍 Backend Setup — Linux (Arch, uv)
+
+Faster alternative using [uv](https://docs.astral.sh/uv/) (works on any Linux distro):
+
+```bash
+cd backend
+uv venv venv --python 3.12          # pinned deps target Python 3.12
+uv pip install --python venv/bin/python -r requirements-lite.txt pytest httpx
+
+# AI stack (torch CPU + transformers + sentence-transformers + opencv + pymupdf):
+uv pip install --python venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
+uv pip install --python venv/bin/python "transformers==4.44.2" "sentence-transformers==3.1.1" "opencv-python-headless==4.10.0.84" "pymupdf==1.24.10"
+```
+
+SQLite needs no server — `backend/.env` uses `DATABASE_URL=sqlite:///./local_dev.db`.
+Seed and run:
+
+```bash
+venv/bin/python -m scripts.seed_admin
+venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Full end-to-end verification (48 checks incl. the real OCR pipeline) against a
+running backend:
+
+```bash
+venv/bin/python scripts/smoke_test_api.py
+```
+
+Note: the checked-in `backend/venv` from a Windows machine cannot run on Linux
+(the `python.exe` binaries are PE executables). Recreate the venv with the
+steps above when switching OS.
+
+---
+
 # 🐍 Backend Setup — Windows
 
 From the project root:

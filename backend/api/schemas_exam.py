@@ -95,6 +95,14 @@ class AnswerScriptOut(BaseModel):
     examination_id: int
     student_id: int
     created_at: datetime
+    # Enrichment added by the list endpoint (never exposes file_path itself):
+    student_name: str | None = None
+    student_usn: str | None = None
+    examination_name: str | None = None
+    evaluation_status: str = "not_evaluated"
+    final_marks: float | None = None
+    total_max_marks: float | None = None
+    evaluation_id: int | None = None
     model_config = {"from_attributes": True}
 
 
@@ -124,6 +132,14 @@ class EvaluationOut(BaseModel):
     confidence_score: float | None = None
     ai_model_version: str | None = None
     created_at: datetime
+    # question_number -> {question_text, reference_answer, correct_option} —
+    # lets the UI show what was asked and the faculty reference side-by-side.
+    question_context: dict[str, dict] | None = None
+    # file type of the underlying answer script (pdf | jpg | png) for the viewer.
+    answer_script_file_type: str | None = None
+    student_name: str | None = None
+    student_usn: str | None = None
+    examination_name: str | None = None
     model_config = {"from_attributes": True}
 
 

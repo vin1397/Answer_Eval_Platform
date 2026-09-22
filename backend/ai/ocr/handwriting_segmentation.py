@@ -40,7 +40,23 @@ QUESTION_MARKER_RE = re.compile(
 MIN_LINE_HEIGHT_RATIO = 0.008     # a text line is at least this fraction of page height
 LINE_GAP_MERGE_RATIO = 0.004      # gaps smaller than this fraction are the same line
 BLOCK_GAP_RATIO = 0.018           # gaps larger than this fraction start a new answer block
-ROW_DENSITY_THRESHOLD_RATIO = 0.02  # min fraction of dark pixels in a row to count as "text"
+ROW_DENSITY_THRESHOLD_RATIO = 0.008  # min fraction of dark pixels in a row to count as "text"
+# Column counts as ink if more than this fraction of its pixels (within the
+# line band) are dark. Used to crop each line horizontally to its ink span.
+INK_COLUMN_THRESHOLD_RATIO = 0.01
+# A band whose ink span is narrower than max(MIN_INK_SPAN_WIDTH_PX,
+# MIN_INK_SPAN_WIDTH_RATIO * page_width) is noise, not handwriting.
+MIN_INK_SPAN_WIDTH_PX = 12
+MIN_INK_SPAN_WIDTH_RATIO = 0.01
+# Degenerate-repetition detection: TrOCR sometimes emits a short token
+# unit repeated many times (e.g. "2200220002000...") when fed a mostly
+# blank / out-of-distribution crop. Real sentences never repeat a 1-4
+# character unit 5+ times consecutively.
+REPETITION_UNIT_MAX_LEN = 4
+REPETITION_MIN_REPEATS = 5
+_REPETITION_RE = re.compile(
+    rf"(.{{1,{REPETITION_UNIT_MAX_LEN}}}?)\1{{{REPETITION_MIN_REPEATS - 1},}}"
+)
 
 
 @dataclass
@@ -175,6 +191,36 @@ def _crop_line(gray_page: np.ndarray, y_start: int, y_end: int, padding: int = 4
     return gray_page[y0:y1, 0:width]
 
 
+def _ink_span(binary_band: np.ndarray) -> tuple[int, int] | None:
+    """
+    Horizontal (x0, x1) extent of ink in a binarized line band, or None if
+    the band contains no meaningful ink. Line crops are cut to this span
+    so TrOCR sees only the handwriting region instead of a mostly-blank
+    full-width strip (which pushes the decoder out of distribution and
+    produces hallucinated repetition).
+    """
+    band_height = binary_band.shape[0]
+    if band_height == 0:
+        return None
+    col_ink = binary_band.sum(axis=0) / 255.0 / band_height
+    ink_cols = np.flatnonzero(col_ink > INK_COLUMN_THRESHOLD_RATIO)
+    if ink_cols.size == 0:
+        return None
+    return int(ink_cols[0]), int(ink_cols[-1]) + 1
+
+
+def _is_degenerate_repetition(text: str) -> bool:
+    """
+    True when OCR output is a short unit repeated many times in a row
+    ("2200220002...") — a known decoder failure mode on blank/noise
+    crops. Such text carries no information and must not be treated as a
+    recognized answer line.
+    """
+    if not text:
+        return False
+    return bool(_REPETITION_RE.search(text))
+
+
 def process_document(file_path: str) -> HandwritingDocumentResult:
     """
     Full pipeline entry point: PDF/image -> pages -> line segmentation ->
@@ -189,50 +235,110 @@ def process_document(file_path: str) -> HandwritingDocumentResult:
         binary = preprocess_page(gray_page)
         line_bands = segment_lines(binary)
         grouped = group_lines_into_blocks(line_bands, gray_page.shape[0])
+        page_height, page_width = gray_page.shape
+        min_ink_width = max(MIN_INK_SPAN_WIDTH_PX, int(page_width * MIN_INK_SPAN_WIDTH_RATIO))
 
+        # Phase 1 — OCR every readable line on the page (batched per
+        # vertical gap-group, which keeps inference efficient), collecting
+        # recognized lines in strict top-to-bottom order.
+        page_lines: list[LineSegment] = []
         for band_group in grouped:
-            line_crops = [_crop_line(gray_page, s, e) for s, e in band_group]
+            # Crop each band horizontally to its ink span; skip bands with
+            # no (or negligible) ink entirely — OCR-ing them only produces
+            # hallucinated junk and wasted inference time.
+            line_crops: list[np.ndarray] = []
+            kept_bands: list[tuple[int, int]] = []
+            for band_start, band_end in band_group:
+                span = _ink_span(binary[band_start:band_end, :])
+                if span is None or (span[1] - span[0]) < min_ink_width:
+                    continue
+                x0 = max(0, span[0] - 4)
+                x1 = min(page_width, span[1] + 4)
+                y0 = max(0, band_start - 4)
+                y1 = min(page_height, band_end + 4)
+                line_crops.append(gray_page[y0:y1, x0:x1])
+                kept_bands.append((band_start, band_end))
+
+            if not line_crops:
+                continue  # nothing readable in this whole group
+
             ocr_results = trocr_service.recognize_lines_batch(line_crops)
-
-            line_segments = [
-                LineSegment(
-                    line_number=i + 1,
-                    text=res.text,
-                    confidence=res.confidence,
-                    y_start=band_group[i][0],
-                    y_end=band_group[i][1],
-                )
-                for i, res in enumerate(ocr_results)
-            ]
-
-            question_number, uncertain, remaining_first_line = _match_question_marker(
-                line_segments[0].text if line_segments else ""
-            )
-            if remaining_first_line is not None and line_segments:
-                line_segments[0] = LineSegment(
-                    line_number=line_segments[0].line_number,
-                    text=remaining_first_line,
-                    confidence=line_segments[0].confidence,
-                    y_start=line_segments[0].y_start,
-                    y_end=line_segments[0].y_end,
+            for i, res in enumerate(ocr_results):
+                text = "" if _is_degenerate_repetition(res.text) else res.text
+                if not text:
+                    continue  # degenerate/empty line carries no information
+                page_lines.append(
+                    LineSegment(
+                        line_number=len(page_lines) + 1,
+                        text=text,
+                        confidence=res.confidence,
+                        y_start=kept_bands[i][0],
+                        y_end=kept_bands[i][1],
+                    )
                 )
 
-            answer_text = " ".join(l.text for l in line_segments if l.text).strip()
-            avg_confidence = (
-                round(sum(l.confidence for l in line_segments) / len(line_segments), 4)
-                if line_segments else 0.0
+        # Phase 2 — assemble answer blocks at question-marker boundaries:
+        # any line *starting* with a confident question marker begins a new
+        # block, regardless of vertical gaps. This handles papers/scripts
+        # where consecutive answers are written tightly together.
+        blocks_on_page: list[AnswerBlock] = []
+
+        def _start_block(line: LineSegment, question_number: str | None, uncertain: bool, first_text: str) -> AnswerBlock:
+            return AnswerBlock(
+                page_number=page_index,
+                question_number=question_number,
+                uncertain=uncertain,
+                lines=[
+                    LineSegment(
+                        line_number=line.line_number,
+                        text=first_text,
+                        confidence=line.confidence,
+                        y_start=line.y_start,
+                        y_end=line.y_end,
+                    )
+                ],
             )
 
-            blocks.append(
-                AnswerBlock(
-                    page_number=page_index,
-                    question_number=question_number,
-                    uncertain=uncertain,
-                    lines=line_segments,
-                    answer_text=answer_text,
-                    confidence=avg_confidence,
-                )
+        for line in page_lines:
+            question_number, uncertain, remaining = _match_question_marker(line.text)
+            if question_number is not None:
+                # Confident marker line starts a new block (marker stripped).
+                if not remaining:
+                    # Marker-only line (e.g. "2)") — the block starts here
+                    # but has no text yet; don't emit an empty line.
+                    blocks_on_page.append(
+                        AnswerBlock(
+                            page_number=page_index,
+                            question_number=question_number,
+                            uncertain=False,
+                            lines=[],
+                        )
+                    )
+                else:
+                    blocks_on_page.append(_start_block(line, question_number, False, remaining))
+            elif blocks_on_page:
+                # Continuation of the current block.
+                blocks_on_page[-1].lines.append(line)
+            else:
+                # Leading content with no marker at all — uncertain block.
+                blocks_on_page.append(_start_block(line, None, True, line.text))
+
+        for answer_block in blocks_on_page:
+            if not answer_block.lines:
+                # Marker-only block with nothing under it (e.g. question
+                # announced but never answered on this page).
+                answer_block.answer_text = ""
+                answer_block.confidence = 0.0
+                blocks.append(answer_block)
+                continue
+
+            answer_block.answer_text = " ".join(
+                l.text for l in answer_block.lines if l.text
+            ).strip()
+            answer_block.confidence = round(
+                sum(l.confidence for l in answer_block.lines) / len(answer_block.lines), 4
             )
+            blocks.append(answer_block)
 
     return HandwritingDocumentResult(blocks=blocks, page_count=len(pages))
 

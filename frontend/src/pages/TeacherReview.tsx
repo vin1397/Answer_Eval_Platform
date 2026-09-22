@@ -64,10 +64,12 @@ export default function TeacherReview() {
                   selected?.id === ev.id ? "bg-primary/10" : "hover:bg-black/5 dark:hover:bg-white/5"
                 }`}
               >
-                <div>
-                  <p className="text-sm font-semibold">Evaluation #{ev.id}</p>
-                  <p className="text-xs text-ink/50">
-                    Confidence: {ev.confidence_score != null ? `${Math.round(ev.confidence_score * 100)}%` : "—"}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">
+                    {ev.student_usn ? `${ev.student_usn} — ${ev.student_name}` : `Evaluation #${ev.id}`}
+                  </p>
+                  <p className="truncate text-xs text-ink/50">
+                    {ev.examination_name} · AI {ev.total_ai_marks ?? "—"}/{ev.total_max_marks ?? "—"}
                   </p>
                 </div>
                 <Badge status={ev.status} />
@@ -85,21 +87,67 @@ export default function TeacherReview() {
         <div className="lg:col-span-2">
           {selected ? (
             <NeoCard>
-              <h3 className="mb-4 text-sm font-bold">Answer Comparison — Evaluation #{selected.id}</h3>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold">
+                    {selected.student_usn ? `${selected.student_usn} — ${selected.student_name}` : `Evaluation #${selected.id}`}
+                  </h3>
+                  <p className="text-xs text-ink/50">{selected.examination_name}</p>
+                </div>
+                <p className="text-sm font-bold text-primary">
+                  AI total: {selected.total_ai_marks ?? "—"} / {selected.total_max_marks ?? "—"}
+                </p>
+              </div>
               <div className="space-y-3">
-                {(selected.extracted_answers || []).map((a) => (
-                  <div key={a.question_number} className="neo-inset rounded-2xl p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-bold">Question {a.question_number}</p>
-                      <p className="text-xs text-ink/50">AI: {a.ai_marks} / {a.max_marks}</p>
+                {(selected.extracted_answers || []).map((a) => {
+                  const ctx = selected.question_context?.[String(a.question_number)];
+                  return (
+                    <div key={a.question_number} className="neo-inset rounded-2xl p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold">
+                          Question {a.question_number}
+                          <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                            {a.question_type === "mcq" ? "MCQ" : "Short Answer"}
+                          </span>
+                        </p>
+                        <p className="text-xs text-ink/50">AI: {a.ai_marks} / {a.max_marks}</p>
+                      </div>
+                      {ctx?.question_text && <p className="mt-1 text-xs text-ink/60">{ctx.question_text}</p>}
+                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-ink/40">Student answer (OCR)</p>
+                          <p className="text-xs text-ink/70 line-clamp-3">
+                            {a.answer_text || <span className="italic text-ink/40">No answer detected</span>}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-white p-3">
+                          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-ink/40">Faculty reference</p>
+                          <p className="text-xs text-ink/70 line-clamp-3">
+                            {a.question_type === "mcq"
+                              ? ctx?.correct_option
+                                ? `Correct option: ${ctx.correct_option}`
+                                : "Not configured"
+                              : ctx?.reference_answer || <span className="italic text-ink/40">Not configured</span>}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex gap-3 text-[11px] text-ink/50">
+                        {a.question_type === "mcq" ? (
+                          <span>
+                            Student: {a.mcq?.student_option ?? "not detected"}
+                            {a.mcq?.is_correct ? " ✓ correct" : a.mcq?.option_detected ? " ✗ wrong" : ""}
+                          </span>
+                        ) : (
+                          <>
+                            <span>Semantic: {Math.round(a.semantic_score * 100)}%</span>
+                            <span>Keyword: {Math.round(a.keyword_score * 100)}%</span>
+                          </>
+                        )}
+                        {a.uncertain && <span className="font-semibold text-amber-600">⚠ uncertain match</span>}
+                      </div>
                     </div>
-                    <p className="mt-2 text-xs text-ink/60 line-clamp-3">{a.answer_text}</p>
-                    <div className="mt-2 flex gap-3 text-[11px] text-ink/50">
-                      <span>Semantic: {Math.round(a.semantic_score * 100)}%</span>
-                      <span>Keyword: {Math.round(a.keyword_score * 100)}%</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">

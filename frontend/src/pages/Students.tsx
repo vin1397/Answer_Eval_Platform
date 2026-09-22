@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Pencil, Trash2, Users, Upload, Download } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Upload, Download, Eye } from "lucide-react";
 import api from "../services/api";
 import NeoCard from "../components/ui/NeoCard";
 import Button from "../components/ui/Button";
 import Modal from "../components/ui/Modal";
 import PageHeader from "../components/ui/PageHeader";
 import SearchInput from "../components/ui/SearchInput";
+import StudentResultsModal from "../components/StudentResultsModal";
 import type { Student, Semester, Paginated } from "../types";
 
 const emptyForm = { usn: "", name: "", section: "", department: "", semester_id: "", email: "", phone: "" };
@@ -19,6 +20,7 @@ export default function Students() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
+  const [resultsStudent, setResultsStudent] = useState<Student | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function fetchStudents() {
@@ -135,7 +137,12 @@ export default function Students() {
             </thead>
             <tbody>
               {(data?.items || []).map((s) => (
-                <tr key={s.id} className="border-b border-ink/5 dark:border-white/5 last:border-0">
+                <tr
+                  key={s.id}
+                  onClick={() => setResultsStudent(s)}
+                  className="cursor-pointer border-b border-ink/5 transition hover:bg-primary/5 dark:border-white/5 last:border-0"
+                  title="View student results"
+                >
                   <td className="px-6 py-4 font-semibold text-primary">{s.usn}</td>
                   <td className="px-6 py-4">{s.name}</td>
                   <td className="px-6 py-4">
@@ -145,10 +152,23 @@ export default function Students() {
                   <td className="px-6 py-4">{s.department}</td>
                   <td className="px-6 py-4">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => openEdit(s)} className="rounded-xl p-2 hover:bg-primary/10">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setResultsStudent(s); }}
+                        className="rounded-xl p-2 hover:bg-primary/10"
+                        title="View results & marks"
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openEdit(s); }}
+                        className="rounded-xl p-2 hover:bg-primary/10"
+                      >
                         <Pencil size={15} />
                       </button>
-                      <button onClick={() => handleDelete(s.id)} className="rounded-xl p-2 text-red-500 hover:bg-red-50">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
+                        className="rounded-xl p-2 text-red-500 hover:bg-red-50"
+                      >
                         <Trash2 size={15} />
                       </button>
                     </div>
@@ -179,6 +199,12 @@ export default function Students() {
           </div>
         )}
       </NeoCard>
+
+      <StudentResultsModal
+        open={resultsStudent != null}
+        onClose={() => setResultsStudent(null)}
+        student={resultsStudent}
+      />
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Student" : "Add Student"}>
         <div className="space-y-4">

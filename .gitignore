@@ -404,3 +404,6 @@ datasets/handwriting/benchmark_results/*.csv
 *.pth
 *.ckpt
 *.onnx
+
+
+.freebuff

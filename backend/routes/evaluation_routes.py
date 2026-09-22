@@ -4,12 +4,14 @@ Examinations, answer script uploads, and the AI evaluation queue.
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from api.schemas_exam import (
     ExaminationCreate, ExaminationOut, AnswerScriptOut, EvaluationOut,
     TeacherReviewCreate, TeacherReviewOut,
 )
+from models.exam import Question
 from auth.dependencies import get_current_user, require_roles
 from database.session import get_db
 from models.enums import UserRole, EvaluationStatus, ReviewDecision
@@ -22,6 +24,61 @@ from services.evaluation_pipeline import run_pipeline
 router = APIRouter(tags=["Evaluation"])
 
 ALLOWED_SCRIPT_TYPES = {".pdf", ".jpg", ".jpeg", ".png"}
+
+MEDIA_TYPES = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}
+
+
+def _with_question_context(db: Session, evaluation: Evaluation) -> dict:
+    """Attaches per-question context (question text + faculty reference) to an
+    evaluation response so the UI can render a meaningful side-by-side review
+    instead of a bare OCR string."""
+    data = EvaluationOut.model_validate(evaluation).model_dump()
+    script = evaluation.answer_script
+    student = script.student if script else None
+    exam = script.examination if script else None
+    data["student_name"] = student.name if student else None
+    data["student_usn"] = student.usn if student else None
+    data["examination_name"] = exam.name if exam else None
+    data["answer_script_file_type"] = script.file_type if script else None
+
+    context: dict[str, dict] = {}
+    if exam and exam.question_paper_id:
+        questions = (
+            db.query(Question)
+            .filter(Question.question_paper_id == exam.question_paper_id)
+            .all()
+        )
+        for q in questions:
+            model_answer = q.model_answer
+            context[str(q.question_number)] = {
+                "question_text": q.question_text,
+                "max_marks": q.max_marks,
+                "question_type": q.question_type.value,
+                "reference_answer": model_answer.answer_text if model_answer else None,
+                "correct_option": model_answer.correct_option if model_answer else None,
+                "keywords": model_answer.keywords if model_answer else [],
+            }
+    data["question_context"] = context
+    return data
+
+
+@router.get("/answer-scripts/{script_id}/file")
+def get_answer_script_file(
+    script_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+):
+    """Serves the stored answer-sheet file (inline) so the UI can display the
+    actual scanned/typed script in a viewer. Requires authentication; the
+    stored path never leaks to the client response."""
+    script = db.get(AnswerScript, script_id)
+    if not script:
+        raise HTTPException(status_code=404, detail="Answer script not found")
+
+    path = Path(storage_service.resolve_local_path(script.file_path))
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Stored file is missing on the server")
+
+    media_type = MEDIA_TYPES.get(script.file_type, "application/octet-stream")
+    return FileResponse(path, media_type=media_type, headers={"Content-Disposition": "inline"})
 
 
 # ------------------------------------------------------------- Examinations
@@ -116,7 +173,23 @@ def list_answer_scripts(
     query = db.query(AnswerScript)
     if examination_id:
         query = query.filter(AnswerScript.examination_id == examination_id)
-    return query.order_by(AnswerScript.created_at.desc()).all()
+    scripts = query.order_by(AnswerScript.created_at.desc()).all()
+
+    items = []
+    for script in scripts:
+        out = AnswerScriptOut.model_validate(script).model_dump()
+        evaluation = script.evaluation
+        student = script.student
+        exam = script.examination
+        out["student_name"] = student.name if student else None
+        out["student_usn"] = student.usn if student else None
+        out["examination_name"] = exam.name if exam else None
+        out["evaluation_status"] = evaluation.status.value if evaluation else "not_evaluated"
+        out["final_marks"] = evaluation.final_marks if evaluation else None
+        out["total_max_marks"] = evaluation.total_max_marks if evaluation else None
+        out["evaluation_id"] = evaluation.id if evaluation else None
+        items.append(out)
+    return items
 
 
 # --------------------------------------------------------------- Evaluation
@@ -130,7 +203,8 @@ def run_evaluation_sync(
         evaluation = run_pipeline(db, answer_script_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return evaluation
+    db.refresh(evaluation)
+    return _with_question_context(db, evaluation)
 
 
 @router.post("/evaluations/queue/{answer_script_id}")
@@ -179,7 +253,8 @@ def list_evaluations(
     query = db.query(Evaluation)
     if status_filter:
         query = query.filter(Evaluation.status == status_filter)
-    return query.order_by(Evaluation.updated_at.desc()).all()
+    evaluations = query.order_by(Evaluation.updated_at.desc()).all()
+    return [_with_question_context(db, ev) for ev in evaluations]
 
 
 @router.get("/evaluations/{evaluation_id}", response_model=EvaluationOut)
@@ -187,7 +262,7 @@ def get_evaluation(evaluation_id: int, db: Session = Depends(get_db), _: User = 
     evaluation = db.get(Evaluation, evaluation_id)
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
-    return evaluation
+    return _with_question_context(db, evaluation)
 
 
 # ----------------------------------------------------------- Teacher review
