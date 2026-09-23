@@ -243,6 +243,11 @@ def run_migration() -> None:
 
 
 def reset_db() -> None:
+    if port_in_use(8000):
+        print("✖ --reset-db refused: something is already serving on port 8000.")
+        print("  Resetting the DB under a live server leaves it reading a deleted")
+        print("  file (the 'ghost database' problem). Stop the backend first, then re-run.")
+        sys.exit(2)
     db = BACKEND_DIR / "local_dev.db"
     if db.exists():
         print(f"→ Deleting {db} ...")
@@ -327,6 +332,8 @@ def main() -> None:
         else:
             seed_admin()
         run_migration()
+
+    if not ARGS.backend_only:
         ensure_frontend_deps()
 
     procs = []

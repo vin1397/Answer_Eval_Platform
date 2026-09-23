@@ -1232,19 +1232,38 @@ http://localhost:5173
 
 # 🧰 Project Launcher
 
-The repository also contains a root-level launcher:
-
-```text
-main.py
-```
-
-The full AI setup can be started with:
+The repository contains a root-level launcher that boots the whole stack with one command — no Docker, no Postgres, no manual steps:
 
 ```powershell
-python main.py --full-ai
+python main.py              # quick start: SQLite + lite backend deps
+python main.py --full-ai    # also install the OCR/NLP/ML stack (torch, transformers, ...)
+python main.py --reset-db   # wipe backend/local_dev.db and reseed (refused while the backend is running)
+python main.py --backend-only
+python main.py --frontend-only
+python main.py --help
 ```
 
-This prepares the environment and starts the backend/frontend according to the project's configured launcher behavior.
+What it does, in order:
+
+1. Creates `backend/venv` with a suitable Python (3.10–3.12). It prefers `uv` (which can fetch a managed Python 3.12), falls back to `python3.12`/`python3.11`/`python3.10` on PATH, then to the interpreter running the launcher. A venv that exists but cannot run (e.g. one created on Windows and reused from Linux/WSL) is detected and rebuilt automatically.
+2. Installs backend requirements — `requirements-lite.txt` by default, `requirements.txt` with `--full-ai` — but **skips pip entirely** when the key packages are already importable, so re-runs are instant.
+3. Writes `backend/.env` in SQLite mode if missing, and creates `frontend/.env` pointing at the API.
+4. Seeds the admin user (`admin / ChangeMe@123`, idempotent) and applies the additive schema migration (safe no-op when up to date).
+5. Starts FastAPI on `:8000` and the Vite frontend on `:5173` — skipping either one if its port is already serving — and shuts both down cleanly on Ctrl+C.
+
+Stop everything and reset to a clean slate:
+
+```powershell
+# stop the launcher with Ctrl+C, then:
+python main.py --reset-db
+```
+
+> **Note:** the full-AI evaluation pipeline needs the model weights under
+> `models/handwriting/trocr-base-handwritten/` — with `--full-ai` installed and
+> the weights present, uploaded scanned scripts are graded by the real local
+> TrOCR + semantic scoring pipeline. Without them, the core app (auth, CRUD,
+> uploads, dashboards) still works and evaluation requests fail gracefully.
+> Celery/Redis workers are not required and are not started by the launcher.
 
 ---
 
