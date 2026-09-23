@@ -132,6 +132,29 @@ def _validate_model_answer_for_question(question: Question, payload: ModelAnswer
             )
 
 
+@router.get("/model-answers")
+def list_model_answers(
+    question_ids: str = "", db: Session = Depends(get_db), _: User = Depends(get_current_user)
+):
+    """Returns saved model answers for the given comma-separated question ids —
+    lets the Model Answers UI prefill previously-authored answer keys."""
+    ids = [int(x) for x in question_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        return []
+    rows = db.query(ModelAnswer).filter(ModelAnswer.question_id.in_(ids)).all()
+    return [
+        {
+            "id": row.id,
+            "question_id": row.question_id,
+            "answer_text": row.answer_text,
+            "correct_option": row.correct_option,
+            "keywords": row.keywords or [],
+            "expected_concepts": row.expected_concepts or [],
+        }
+        for row in rows
+    ]
+
+
 @router.post("/model-answers", response_model=ModelAnswerOut, status_code=201)
 def create_model_answer(
     payload: ModelAnswerCreate, db: Session = Depends(get_db),

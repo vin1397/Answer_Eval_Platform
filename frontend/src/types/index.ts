@@ -157,6 +157,26 @@ export interface Question {
   options?: string[] | null;
 }
 
+export interface ExaminationPipelineStatus extends Examination {
+  question_paper_title: string | null;
+  scripts_uploaded: number;
+  evaluations_completed: number;
+  evaluations_approved: number;
+  awaiting_evaluation: number;
+  awaiting_review: number;
+  next_action: string | null;
+  next_action_route: string | null;
+}
+
+export interface ModelAnswerState {
+  id: number;
+  question_id: number;
+  answer_text: string | null;
+  correct_option: string | null;
+  keywords: string[];
+  expected_concepts: string[];
+}
+
 export interface Examination {
   id: number;
   name: string;

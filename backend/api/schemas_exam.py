@@ -86,6 +86,21 @@ class ExaminationOut(ExaminationCreate):
     model_config = {"from_attributes": True}
 
 
+class ExaminationPipelineStatus(ExaminationOut):
+    """Examination enriched with live pipeline counters so the UI can show
+    where each exam stands (Setup -> Examine -> Evaluate -> Review)."""
+    question_paper_title: str | None = None
+    scripts_uploaded: int = 0
+    evaluations_completed: int = 0
+    evaluations_approved: int = 0
+    awaiting_evaluation: int = 0
+    awaiting_review: int = 0
+    # Contextual guidance for the next action on this exam, e.g.
+    # "Link a question paper" or "Evaluate 3 scripts".
+    next_action: str | None = None
+    next_action_route: str | None = None
+
+
 class AnswerScriptOut(BaseModel):
     id: int
     file_path: str

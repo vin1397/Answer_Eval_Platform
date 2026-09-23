@@ -8,10 +8,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from api.schemas_exam import (
-    ExaminationCreate, ExaminationOut, AnswerScriptOut, EvaluationOut,
+    ExaminationCreate, ExaminationOut, ExaminationPipelineStatus, AnswerScriptOut, EvaluationOut,
     TeacherReviewCreate, TeacherReviewOut,
 )
-from models.exam import Question
+from models.exam import Question, QuestionPaper
 from auth.dependencies import get_current_user, require_roles
 from database.session import get_db
 from models.enums import UserRole, EvaluationStatus, ReviewDecision
@@ -82,14 +82,71 @@ def get_answer_script_file(
 
 
 # ------------------------------------------------------------- Examinations
-@router.get("/examinations", response_model=list[ExaminationOut])
+@router.get("/examinations", response_model=list[ExaminationPipelineStatus])
 def list_examinations(
     subject_id: int | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)
 ):
+    """Lists examinations with live pipeline counters so the UI can present the
+    workflow state (Setup -> Examine -> Evaluate -> Review) at a glance."""
     query = db.query(Examination)
     if subject_id:
         query = query.filter(Examination.subject_id == subject_id)
-    return query.order_by(Examination.exam_date.desc()).all()
+    exams = query.order_by(Examination.exam_date.desc()).all()
+
+    out: list[dict] = []
+    for exam in exams:
+        data = ExaminationOut.model_validate(exam).model_dump()
+        paper = exam.question_paper_id and db.get(QuestionPaper, exam.question_paper_id) or None
+        data["question_paper_title"] = paper.title if paper else None
+
+        scripts = exam.answer_scripts
+        data["scripts_uploaded"] = len(scripts)
+        completed = approved = awaiting_eval = awaiting_review = 0
+        for script in scripts:
+            ev = script.evaluation
+            if ev is None:
+                awaiting_eval += 1
+                continue
+            if ev.status == EvaluationStatus.APPROVED:
+                approved += 1
+                completed += 1
+            elif ev.status in (EvaluationStatus.AI_EVALUATED, EvaluationStatus.UNDER_REVIEW):
+                completed += 1
+                awaiting_review += 1
+            elif ev.status == EvaluationStatus.FAILED:
+                awaiting_eval += 1  # failed runs can simply be re-run
+            else:
+                awaiting_eval += 1  # pending / in-flight
+        data["evaluations_completed"] = completed
+        data["evaluations_approved"] = approved
+        data["awaiting_evaluation"] = awaiting_eval
+        data["awaiting_review"] = awaiting_review
+
+        # Contextual next-step guidance — the UI's "what do I do now" hook.
+        if paper is None:
+            data["next_action"] = "Link a question paper"
+            data["next_action_route"] = "/app/question-papers"
+        elif not paper.questions:
+            data["next_action"] = "Paper has no extracted questions"
+            data["next_action_route"] = "/app/question-papers"
+        elif any(q.model_answer is None for q in paper.questions):
+            n_missing = sum(1 for q in paper.questions if q.model_answer is None)
+            data["next_action"] = f"Author {n_missing} missing model answer{n_missing != 1 and 's' or ''}"
+            data["next_action_route"] = f"/app/model-answers?paper={paper.id}"
+        elif data["awaiting_review"]:
+            data["next_action"] = f"Review {data['awaiting_review']} AI evaluation{data['awaiting_review'] != 1 and 's' or ''}"
+            data["next_action_route"] = "/app/teacher-review"
+        elif data["awaiting_evaluation"]:
+            data["next_action"] = f"Evaluate {data['awaiting_evaluation']} script{data['awaiting_evaluation'] != 1 and 's' or ''}"
+            data["next_action_route"] = "/app/answer-scripts"
+        elif data["scripts_uploaded"] == 0:
+            data["next_action"] = "Upload answer scripts"
+            data["next_action_route"] = "/app/answer-scripts"
+        else:
+            data["next_action"] = "All done — view reports"
+            data["next_action_route"] = "/app/reports"
+        out.append(data)
+    return out
 
 
 @router.post("/examinations", response_model=ExaminationOut, status_code=201)
